@@ -1,78 +1,101 @@
 <!DOCTYPE html>
-<html>
-    <head>
-        <script type="text/javascript">
-            const BRIDGE_CODE = "address_finder";
+<html lang="ko">
+<head>
+  <meta charset="utf-8">
+  <link rel="preconnect" href="https://t1.daumcdn.net/mapjsapi/bundle/postcode/">
+  <link rel="dns-prefetch" href="https://t1.daumcdn.net/mapjsapi/bundle/postcode/">
+  <meta name="viewport" content="width=device-width,initial-scale=1.0,minimum-scale=1.0,maximum-scale=1.0,user-scalable=no">
+  <style>
+    html, body { margin: 0; padding: 0; height: 100%; }
+    #container {
+      width: 100%;
+      height: 100%;
+      display: flex;
+      align-items: center;
+      justify-content: center;
+    }
+    @keyframes rotate {
+      from { transform: rotate(0deg); }
+      to { transform: rotate(360deg); }
+    }
+    #activity-indicator {
+      animation: rotate linear infinite 0.75s;
+    }
+  </style>
+</head>
+<body onLoad="init()">
+  <div id="container">
+    <svg id="activity-indicator" width="32" height="32" viewBox="0 0 32 32" xmlns="http://www.w3.org/2000/svg">
+      <circle cx="16" cy="16" fill="none" r="14" stroke-width="4" style="stroke:#878E95;opacity:0.2">
+      </circle>
+      <circle cx="16" cy="16" fill="none" r="14" stroke-width="4" style="stroke:#878E95;stroke-dasharray:80;stroke-dashoffset:60">
+      </circle>
+    </svg>
+  </div>
+  <script>
+    const urlSearchParams = new URLSearchParams(window.location.search);
+    const params = Object.fromEntries(urlSearchParams.entries());
+    const { query = undefined, ...daumPostcodeOptions } = params;
 
-            function send(address, zipCode){
-                window[BRIDGE_CODE].result(address, zipCode);
-            }
-        </script>
-        <style>
-            html, body { background: #ffffff; padding: 0; margin: 0; }
-        </style>
-    </head>
-    <body onload="load()">
-        <!-- iOS에서는 position:fixed 버그가 있음, 적용하는 사이트에 맞게 position:absolute 등을 이용하여 top,left값 조정 필요 -->
-		<div id="layer" style="display:block;position:fixed;overflow:hidden;z-index:1;-webkit-overflow-scrolling:touch;width:100%;height:100%;top:0;left:0;border:none;"></div>
+    // 속성에 컬백 함수를 전달할 수 없게 함
+    delete daumPostcodeOptions['oncomplete'];
+    delete daumPostcodeOptions['onresize'];
+    delete daumPostcodeOptions['onclose'];
+    delete daumPostcodeOptions['onsearch'];
 
-        <script src="https://t1.kakaocdn.net/mapjsapi/bundle/postcode/prod/postcode.v2.js"></script>
-        <script>
-            // 우편번호 찾기 화면을 넣을 element
-            const el = document.getElementById('layer');
+    const onComplete = (data) => {
+      const queryParameters = Object.keys(data).reduce((parameters, key) => {
+        const param = data[key]
+        if (param) {
+          parameters.push(`${encodeURIComponent(key)}=${encodeURIComponent(param)}`)
+        }
+        return parameters
+      }, []).join('&');
+      window.location.href = `postcode://complete?${queryParameters}`;
 
-            function load() {
-                new daum.Postcode({
-                    oncomplete: function(data) {
-                        let fullRoadAddr = data.roadAddress; // 도로명 주소 변수
-                        let extraRoadAddr = ''; // 도로명 조합형 주소 변수
+      if (!window.webkit) {
+        return
+      }
+      if (!window.webkit.messageHandlers) {
+        return
+      }
+      if (!window.webkit.messageHandlers.postcode) {
+        return
+      }
+      if (typeof window.webkit.messageHandlers.postcode.postMessage !== 'function') {
+        return
+      }
+      window.webkit.messageHandlers.postcode.postMessage(data)
+    }
 
-                        // 법정동명이 있을 경우 추가한다. (법정리는 제외)
-                        // 법정동의 경우 마지막 문자가 "동/로/가"로 끝난다.
-                        if(data.bname.length > 0 && /[동|로|가]$/g.test(data.bname))
-                            extraRoadAddr += data.bname;
+    const onScriptLoad = () => {
+      const webviewLayer = document.getElementById('container')
+      webviewLayer.innerHTML = ''
 
-                        // 건물명이 있고, 공동주택일 경우 추가한다.
-                        if(data.buildingName.length > 0 && data.apartment === 'Y')
-                           extraRoadAddr += (extraRoadAddr !== '' ? ', ' + data.buildingName : data.buildingName);
+      new daum.Postcode({
+        onsearch: () => window.scrollTo(0, 0),
+        oncomplete: onComplete,
+        width: '100%',
+        height: '100%',
+        ...daumPostcodeOptions,
+      }).embed(webviewLayer, {
+        q: query,
 
-                        // 도로명, 지번 조합형 주소가 있을 경우, 괄호까지 추가한 최종 문자열을 만든다.
-                        if(extraRoadAddr.length > 0) extraRoadAddr = ' (' + extraRoadAddr + ')';
+        // 선택 후에 자동으로 레이어가 닫히지 않도록 함
+        autoClose: false,
+      });
+    }
 
-                        // 도로명, 지번 주소의 유무에 따라 해당 조합형 주소를 추가한다.
-                        if(fullRoadAddr.length > 0) fullRoadAddr += extraRoadAddr;
+    const init = () => {
+      const script = document.createElement('script')
+      script.type = 'text/javascript'
+      script.src = 'https://t1.kakaocdn.net/mapjsapi/bundle/postcode/prod/postcode.v2.js'
+      script.async = true
+      script.onload = onScriptLoad
 
-                        send(fullRoadAddr, data.zonecode);
-                    },
-                    width : '100%',
-                    height : '100%'
-                }).embed(el);
-
-                setTimeout(function(){
-                    // iframe을 넣은 element를 보이게 한다.
-                    el.style.display = 'block';
-
-                    // iframe을 넣은 element의 위치를 화면의 가운데로 이동시킨다.
-                    initLayerPosition();
-                }, 50);
-            }
-
-            // 브라우저의 크기 변경에 따라 레이어를 가운데로 이동시키고자 하실때에는
-            // resize이벤트나, orientationchange이벤트를 이용하여 값이 변경될때마다 아래 함수를 실행 시켜 주시거나,
-            // 직접 el의 top,left값을 수정해 주시면 됩니다.
-            function initLayerPosition(){
-                const width = (window.innerWidth || document.documentElement.clientWidth); //우편번호서비스가 들어갈 element의 width
-                const height = (window.innerHeight || document.documentElement.clientHeight); //우편번호서비스가 들어갈 element의 height
-                const borderWidth = 0; // ✅ 5 → 0 으로 변경
-
-                el.style.width = width + 'px';
-                el.style.height = height + 'px';
-                el.style.border = 'none'; // ✅ border 제거
-
-                el.style.left = '0px'; // ✅ 계산 불필요, 그냥 0
-                el.style.top = '0px';  // ✅ 계산 불필요, 그냥 0
-            }
-        </script>
-    </body>
+      document.body.appendChild(script)
+    }
+  </script>
+</body>
 </html>
 	
